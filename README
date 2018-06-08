@@ -1,0 +1,9 @@
+This package contains:
+
+-- Public domain lbci Lua module
+
+   http://www.tecgraf.puc-rio.br/~lhf/ftp/lua/#lbci
+
+-- Excerpt from MIT-licensed Lua 5.1.4 sources, required to build lbci
+
+   http://lua.org
