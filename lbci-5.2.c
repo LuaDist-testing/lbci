@@ -2,7 +2,7 @@
 * lbci.c
 * Lua bytecode inspector
 * Luiz Henrique de Figueiredo <lhf@tecgraf.puc-rio.br>
-* 06 Mar 2009 07:59:10
+* 25 Apr 2013 13:18:03
 * This code is hereby placed in the public domain.
 */
 
@@ -24,9 +24,16 @@ static const Proto* Pget(lua_State *L, int i)
 {
  if (lua_isuserdata(L,i)) return lua_touserdata(L,i);
  if (!lua_isfunction(L,i) || lua_iscfunction(L,i))
-  luaL_typerror(L,i,"Lua function");
- return ((Closure*)lua_topointer(L,i))->l.p;
+ {
+  const char *msg = lua_pushfstring(L, "Lua function expected, got %s",
+                                    luaL_typename(L,i));
+  luaL_argerror(L,i,msg);
+  return NULL;
+ }
+ return ((LClosure*)lua_topointer(L,i))->p;
 }
+
+#define UPVALNAME(x) ((f->upvalues[x].name) ? getstr(f->upvalues[x].name) : "-")
 
 static int do_getupvalue(lua_State *L)		/** getupvalue(f,i) */
 {
@@ -34,8 +41,10 @@ static int do_getupvalue(lua_State *L)		/** getupvalue(f,i) */
  int i=luaL_checkinteger(L,2);
  if (i<=0 || i>f->sizeupvalues || f->upvalues==NULL) return 0;
  i--;
- lua_pushstring(L,getstr(f->upvalues[i]));
- return 1;
+ lua_pushstring(L,UPVALNAME(i));
+ lua_pushinteger(L,f->upvalues[i].instack);
+ lua_pushinteger(L,f->upvalues[i].idx);
+ return 3;
 }
 
 static int do_getlocal(lua_State *L)		/** getlocal(f,i) */
@@ -71,6 +80,8 @@ static int do_getfunction(lua_State *L)		/** getfunction(f,i) */
  return 1;
 }
 
+#define MYK(x)		(-1-(x))
+
 static int do_getinstruction(lua_State *L)	/** getinstruction(f,i) */
 {
  const Proto* f=Pget(L,1);
@@ -84,28 +95,34 @@ static int do_getinstruction(lua_State *L)	/** getinstruction(f,i) */
  int a=GETARG_A(i);
  int b=GETARG_B(i);
  int c=GETARG_C(i);
+ int ax=GETARG_Ax(i);
  int bx=GETARG_Bx(i);
  int sbx=GETARG_sBx(i);
- int line=getline(f,pc);
+ int line=getfuncline(f,pc);
  if (line>0) lua_pushinteger(L,line); else lua_pushnil(L);
  lua_pushstring(L,luaP_opnames[o]);
  switch (getOpMode(o))
  {
   case iABC:
    lua_pushinteger(L,a);
-   if (getBMode(o)!=OpArgN) lua_pushinteger(L,ISK(b) ? (-1-INDEXK(b)) : b);
+   if (getBMode(o)!=OpArgN) lua_pushinteger(L,ISK(b) ? (MYK(INDEXK(b))) : b);
    else lua_pushnil(L);
-   if (getCMode(o)!=OpArgN) lua_pushinteger(L,ISK(c) ? (-1-INDEXK(c)) : c);
+   if (getCMode(o)!=OpArgN) lua_pushinteger(L,ISK(c) ? (MYK(INDEXK(c))) : c);
    else lua_pushnil(L);
    break;
   case iABx:
    lua_pushinteger(L,a);
-   if (getBMode(o)==OpArgK) lua_pushinteger(L,-1-bx); else lua_pushinteger(L,bx);
+   if (getBMode(o)==OpArgK) lua_pushinteger(L,MYK(bx)); else lua_pushinteger(L,bx);
    lua_pushnil(L);
    break;
   case iAsBx:
-   if (o!=OP_JMP) lua_pushinteger(L,a);
+   lua_pushinteger(L,a);
    lua_pushinteger(L,sbx);
+   lua_pushnil(L);
+   break;
+  case iAx:
+   lua_pushinteger(L,MYK(ax));
+   lua_pushnil(L);
    lua_pushnil(L);
    break;
  }
@@ -114,9 +131,9 @@ static int do_getinstruction(lua_State *L)	/** getinstruction(f,i) */
    case OP_JMP:
    case OP_FORLOOP:
    case OP_FORPREP:
+   case OP_TFORLOOP:
     lua_pop(L,1);
     lua_pushinteger(L,sbx+pc+2);
-    lua_pushnil(L);
     break;
    default:
     break;
@@ -132,7 +149,7 @@ static int do_getinstruction(lua_State *L)	/** getinstruction(f,i) */
 static int do_getheader(lua_State *L)		/** getheader(f,i) */
 {
  const Proto* f=Pget(L,1);
- const char* s=getstr(f->source);
+ const char* s=f->source ? getstr(f->source) : "=?";
  if (*s=='@' || *s=='=')
   s++;
  else if (*s==LUA_SIGNATURE[0])
@@ -147,7 +164,7 @@ static int do_getheader(lua_State *L)		/** getheader(f,i) */
  setifield(L,"params",f->numparams);
  setbfield(L,"isvararg",f->is_vararg);
  setifield(L,"slots",f->maxstacksize);
- setifield(L,"upvalues",f->nups);
+ setifield(L,"upvalues",f->sizeupvalues);
  setifield(L,"locals",f->sizelocvars);
  setifield(L,"constants",f->sizek);
  setifield(L,"functions",f->sizep);
@@ -165,7 +182,7 @@ static int do_setconstant(lua_State *L)		/** setconstant(f,i,v) */
  return 0;
 }
 
-static const luaL_reg R[] =
+static const luaL_Reg R[] =
 {
 	{ "getconstant",	do_getconstant },
 	{ "getfunction",	do_getfunction },
@@ -177,8 +194,8 @@ static const luaL_reg R[] =
 	{ NULL,			NULL	}
 };
 
-LUALIB_API int luaopen_inspector(lua_State *L)
+LUALIB_API int luaopen_bci(lua_State *L)
 {
- luaL_register(L,"inspector",R);
+ luaL_newlib(L,R);
  return 1;
 }
