@@ -1,18 +1,17 @@
 -- This file was automatically generated for the LuaDist project.
 
 package="lbci"
-version="20130429-1"
+version="20150629-1"
 
 -- LuaDist source
 source = {
-  tag = "20130429-1",
+  tag = "20150629-1",
   url = "git://github.com/LuaDist-testing/lbci.git"
 }
 -- Original source
 -- source = {
---    url = "http://luarocks.org/extra/multi/lbci-20130429-1.tar.gz",
---    dir = "lbci",
---    md5 = "d30fe0ab8b84c77f905c6e4392accc6a"
+--    url = "https://github.com/siffiejoe/lua-lbci/archive/v20150629.zip",
+--    dir = "lua-lbci-20150629",
 -- }
 
 description = {
@@ -25,8 +24,8 @@ description = {
 }
 
 dependencies = {
-  -- Uses Lua internals. Includes support for Lua 5.1 *and* Lua 5.2.
-   "lua >= 5.1, < 5.3"
+  -- Uses Lua internals. Includes support for Lua 5.1, 5.2, and 5.3.
+   "lua >= 5.1, < 5.4"
 }
 
 build = {
